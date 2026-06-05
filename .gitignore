@@ -1,0 +1,25 @@
+# Binaries
+bin/
+tmp/
+*.exe
+*.out
+
+# Environment
+.env
+!.env.example
+
+# Uploads
+uploads/
+
+# Go
+vendor/
+*.test
+coverage.out
+
+# Docs (auto-generated)
+docs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
