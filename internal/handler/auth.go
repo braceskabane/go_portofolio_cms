@@ -68,13 +68,13 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 	}
 
 	// Parse refresh token to get userID
-	claims, err := middleware.ParseAdminToken(req.RefreshToken)
+	userID, err := middleware.ParseRefreshToken(req.RefreshToken)
 	if err != nil {
 		return Unauthorized(c, "Invalid or expired refresh token")
 	}
 
 	// Get user to verify still exists and get updated role
-	user, err := h.authService.GetByID(claims.UserID)
+	user, err := h.authService.GetByID(userID)
 	if err != nil {
 		return NotFound(c, "User not found")
 	}

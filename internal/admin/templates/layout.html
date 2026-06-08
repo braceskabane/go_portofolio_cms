@@ -284,7 +284,7 @@
       </header>
 
       <!-- Content -->
-      <main style="flex: 1; padding: 28px; max-width: 1200px; width: 100%">
+      <main style="flex: 1; padding: 28px; width: 100%; {{if eq .Title "Dashboard"}}max-width: none;{{else}}max-width: 1200px;{{end}}">
         {{if .Flash}}
         <div
           id="flash-msg"

@@ -1,4 +1,4 @@
-# 🗂 Portfolio CMS — Go Fiber + GORM + PostgreSQL + GoAdmin
+# 🗂 Portfolio CMS — Go Fiber + GORM + PostgreSQL
 
 Backend API untuk portfolio website dengan dashboard sederhana.
 

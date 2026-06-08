@@ -31,7 +31,7 @@ func ProfilePage(db *gorm.DB) fiber.Handler {
       <h3 class="font-semibold text-gray-800 text-base">Settings</h3>
       %s
     </div>
-    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-6 py-2.5 rounded-lg transition">
+    <button type="submit" class="bg-[#1e1d1e] hover:bg-[#252425] text-white text-sm font-medium px-6 py-2.5 rounded-lg transition">
       Save Profile
     </button>
   </form>

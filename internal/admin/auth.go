@@ -11,17 +11,26 @@ import (
 
 // LoginPage renders the login form
 func LoginPage(c *fiber.Ctx) error {
-	// Already logged in?
-	if c.Cookies(middleware.AdminCookieName()) != "" {
-		return c.Redirect("/admin")
-	}
-	flash := c.Query("error")
-	flashMsg := ""
-	if flash == "invalid" {
-		flashMsg = "ERR:Invalid username or password"
-	}
-	page := loginHTML(flashMsg)
-	return c.Type("html").SendString(page)
+    token := c.Cookies(middleware.SessionCookieName())
+    if token != "" {
+        // Validasi dulu tokennya, jangan langsung percaya cookie ada
+        _, err := middleware.ParseRefreshToken(token)
+        if err != nil {
+            // Token invalid/expired — hapus dan tampilkan login
+            middleware.ClearSessionCookie(c)
+            page := loginHTML("")
+            return c.Type("html").SendString(page)
+        }
+        return c.Redirect("/admin")
+    }
+
+    flash := c.Query("error")
+    flashMsg := ""
+    if flash == "invalid" {
+        flashMsg = "ERR:Invalid username or password"
+    }
+    page := loginHTML(flashMsg)
+    return c.Type("html").SendString(page)
 }
 
 // LoginHandler validates credentials and sets a session cookie
@@ -30,37 +39,28 @@ func LoginHandler(cfg *config.Config) fiber.Handler {
 		email := c.FormValue("email")
 		password := c.FormValue("password")
 
-		// Compare against admin credentials from config
 		if email != cfg.Admin.Username {
 			return c.Redirect("/admin/login?error=invalid")
 		}
-		// Support both plain text (dev) and bcrypt (prod) admin passwords
 		err := bcrypt.CompareHashAndPassword([]byte(cfg.Admin.Password), []byte(password))
 		if err != nil && cfg.Admin.Password != password {
 			return c.Redirect("/admin/login?error=invalid")
 		}
 
-		// Generate a JWT token for the session cookie
-		token, err := middleware.GenerateAccessToken("admin", email, "admin")
+		// Refresh token untuk session cookie — long-lived (7 hari)
+		token, err := middleware.GenerateRefreshToken(email)
 		if err != nil {
 			return c.Redirect("/admin/login?error=invalid")
 		}
 
-		c.Cookie(&fiber.Cookie{
-			Name:     middleware.AdminCookieName(),
-			Value:    token,
-			Expires:  time.Now().Add(7 * 24 * time.Hour),
-			HTTPOnly: true,
-			SameSite: "Lax",
-		})
-
+		middleware.SetSessionCookie(c, token, 7*24*time.Hour)
 		return c.Redirect("/admin")
 	}
 }
 
 // LogoutHandler clears the session cookie
 func LogoutHandler(c *fiber.Ctx) error {
-	c.ClearCookie(middleware.AdminCookieName())
+	middleware.ClearSessionCookie(c)
 	return c.Redirect("/admin/login")
 }
 

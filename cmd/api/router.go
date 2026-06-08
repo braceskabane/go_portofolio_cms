@@ -72,7 +72,7 @@ func (r *Router) Setup() {
 	public.Post("/contact", r.contact.SendMessage)
 
 	// ── Protected API routes (for custom admin or testing) ───────────────────
-	protected := v1.Group("/admin/api", middleware.JWTProtected(), middleware.AdminOnly())
+	protected := v1.Group("/admin/api", middleware.JWTProtected(), middleware.RoleRequired("admin", "superadmin"))
 
 	// Projects
 	protected.Get("/projects", r.project.AdminListProjects)

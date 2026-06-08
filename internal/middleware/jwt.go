@@ -17,7 +17,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// GenerateAccessToken creates a signed JWT access token
+// GenerateAccessToken creates a signed JWT access token (15 minutes)
 func GenerateAccessToken(userID, email, role string) (string, error) {
 	cfg := config.Cfg
 	claims := Claims{
@@ -34,10 +34,11 @@ func GenerateAccessToken(userID, email, role string) (string, error) {
 }
 
 // GenerateRefreshToken creates a signed JWT refresh token (7 days)
-func GenerateRefreshToken(userID string) (string, error) {
+// subject bisa berisi userID (API) atau email (admin session)
+func GenerateRefreshToken(subject string) (string, error) {
 	cfg := config.Cfg
 	claims := jwt.RegisteredClaims{
-		Subject:   userID,
+		Subject:   subject,
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 	}
@@ -45,7 +46,23 @@ func GenerateRefreshToken(userID string) (string, error) {
 	return token.SignedString([]byte(cfg.JWT.Secret))
 }
 
-// JWTProtected is a Fiber middleware that validates Bearer tokens
+// ParseRefreshToken validates a refresh token and returns its Subject.
+// Reusable untuk API (subject=userID) maupun session cookie (subject=email).
+func ParseRefreshToken(tokenStr string) (string, error) {
+	claims := &jwt.RegisteredClaims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fiber.ErrUnauthorized
+		}
+		return []byte(config.Cfg.JWT.Secret), nil
+	})
+	if err != nil || !token.Valid {
+		return "", fiber.ErrUnauthorized
+	}
+	return claims.Subject, nil
+}
+
+// JWTProtected validates Bearer access tokens on protected API routes
 func JWTProtected() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -65,7 +82,6 @@ func JWTProtected() fiber.Handler {
 			}
 			return []byte(config.Cfg.JWT.Secret), nil
 		})
-
 		if err != nil || !token.Valid {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"success": false,
@@ -73,7 +89,6 @@ func JWTProtected() fiber.Handler {
 			})
 		}
 
-		// Inject claims into context
 		c.Locals("userID", claims.UserID)
 		c.Locals("email", claims.Email)
 		c.Locals("role", claims.Role)
@@ -82,29 +97,19 @@ func JWTProtected() fiber.Handler {
 	}
 }
 
-// ParseAdminToken parses and validates a JWT, returning the claims
-func ParseAdminToken(tokenStr string) (*Claims, error) {
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fiber.ErrUnauthorized
-		}
-		return []byte(config.Cfg.JWT.Secret), nil
-	})
-	if err != nil || !token.Valid {
-		return nil, fiber.ErrUnauthorized
+// RoleRequired ensures the caller has one of the allowed roles.
+// Reusable — ganti AdminOnly() agar tidak terikat nama "admin".
+func RoleRequired(roles ...string) fiber.Handler {
+	allowed := make(map[string]bool, len(roles))
+	for _, r := range roles {
+		allowed[r] = true
 	}
-	return claims, nil
-}
-
-// AdminOnly ensures only admin/superadmin roles can proceed
-func AdminOnly() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		role, ok := c.Locals("role").(string)
-		if !ok || (role != "admin" && role != "superadmin") {
+		if !ok || !allowed[role] {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"success": false,
-				"message": "Access denied: admin only",
+				"message": "Access denied: insufficient role",
 			})
 		}
 		return c.Next()

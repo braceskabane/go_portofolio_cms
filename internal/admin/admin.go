@@ -18,7 +18,7 @@ func SetupAdmin(app *fiber.App, cfg *config.Config, db *gorm.DB) {
 	admin.Get("/logout", LogoutHandler)
 
 	// ── Protected admin routes ──
-	protected := admin.Group("", middleware.AdminSessionRequired())
+	protected := admin.Group("", middleware.SessionRequired("/admin/login"))
 	protected.Get("/", DashboardPage(db))
 
 	// Projects
