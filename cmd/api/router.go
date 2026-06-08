@@ -9,35 +9,55 @@ import (
 )
 
 type Router struct {
-	app        *fiber.App
-	auth       *handler.AuthHandler
-	project    *handler.ProjectHandler
-	skill      *handler.SkillHandler
-	experience *handler.ExperienceHandler
-	education  *handler.EducationHandler
-	profile    *handler.ProfileHandler
-	contact    *handler.ContactHandler
+	app *fiber.App
+
+	// Handlers
+	auth                 *handler.AuthHandler
+	project              *handler.ProjectHandler
+	asset                *handler.AssetHandler
+	projectCategory      *handler.ProjectCategoryHandler
+	experienceCategory   *handler.ExperienceCategoryHandler
+	stackCategory        *handler.StackCategoryHandler
+	stackItem            *handler.StackItemHandler
+	skill                *handler.SkillHandler
+	experience           *handler.ExperienceHandler
+	education            *handler.EducationHandler
+	profile              *handler.ProfileHandler
+	contact              *handler.ContactHandler
+	runningActivity      *handler.RunningActivityHandler
 }
 
 func NewRouter(
 	app *fiber.App,
 	auth *handler.AuthHandler,
 	project *handler.ProjectHandler,
+	asset *handler.AssetHandler,
+	projectCategory *handler.ProjectCategoryHandler,
+	experienceCategory *handler.ExperienceCategoryHandler,
+	stackCategory *handler.StackCategoryHandler,
+	stackItem *handler.StackItemHandler,
 	skill *handler.SkillHandler,
 	experience *handler.ExperienceHandler,
 	education *handler.EducationHandler,
 	profile *handler.ProfileHandler,
 	contact *handler.ContactHandler,
+	runningActivity *handler.RunningActivityHandler,
 ) *Router {
 	return &Router{
-		app:        app,
-		auth:       auth,
-		project:    project,
-		skill:      skill,
-		experience: experience,
-		education:  education,
-		profile:    profile,
-		contact:    contact,
+		app:                 app,
+		auth:                auth,
+		project:             project,
+		asset:               asset,
+		projectCategory:     projectCategory,
+		experienceCategory:  experienceCategory,
+		stackCategory:       stackCategory,
+		stackItem:           stackItem,
+		skill:               skill,
+		experience:          experience,
+		education:           education,
+		profile:             profile,
+		contact:             contact,
+		runningActivity:     runningActivity,
 	}
 }
 
@@ -67,18 +87,60 @@ func (r *Router) Setup() {
 	public.Get("/projects", r.project.ListProjects)
 	public.Get("/projects/:slug", r.project.GetProject)
 	public.Get("/skills", r.skill.ListSkills)
+	public.Get("/skills/:id", r.skill.GetSkillDetail)
 	public.Get("/experiences", r.experience.ListExperiences)
 	public.Get("/educations", r.education.ListEducations)
 	public.Post("/contact", r.contact.SendMessage)
 
-	// ── Protected API routes (for custom admin or testing) ───────────────────
+	// Public: Tech Stack
+	public.Get("/stack-categories", r.stackCategory.ListCategories)
+	public.Get("/stack-items", r.stackItem.ListItems)
+
+	// Public: Running Activities
+	public.Get("/running-activities", r.runningActivity.ListActivities)
+	public.Get("/running-activities/:id", r.runningActivity.GetActivity)
+
+	// ── Protected API routes (for admin dashboard) ───────────────────────────
 	protected := v1.Group("/admin/api", middleware.JWTProtected(), middleware.RoleRequired("admin", "superadmin"))
 
 	// Projects
 	protected.Get("/projects", r.project.AdminListProjects)
 	protected.Post("/projects", r.project.CreateProject)
+	protected.Get("/projects/:id", r.project.AdminGetProject)
 	protected.Put("/projects/:id", r.project.UpdateProject)
 	protected.Delete("/projects/:id", r.project.DeleteProject)
+
+	// Assets (polymorphic)
+	protected.Post("/assets", r.asset.CreateAsset)
+	protected.Get("/assets", r.asset.ListAssets)
+	protected.Put("/assets/:id", r.asset.UpdateAsset)
+	protected.Delete("/assets/:id", r.asset.DeleteAsset)
+
+	// Project Categories
+	protected.Get("/project-categories", r.projectCategory.ListCategories)
+	protected.Post("/project-categories", r.projectCategory.CreateCategory)
+	protected.Put("/project-categories/:id", r.projectCategory.UpdateCategory)
+	protected.Delete("/project-categories/:id", r.projectCategory.DeleteCategory)
+
+	// Experience Categories
+	protected.Get("/experience-categories", r.experienceCategory.ListCategories)
+	protected.Post("/experience-categories", r.experienceCategory.CreateCategory)
+	protected.Put("/experience-categories/:id", r.experienceCategory.UpdateCategory)
+	protected.Delete("/experience-categories/:id", r.experienceCategory.DeleteCategory)
+
+	// Tech Stack Categories
+	protected.Get("/stack-categories", r.stackCategory.AdminListCategories)
+	protected.Get("/stack-categories/:id", r.stackCategory.GetCategory)
+	protected.Post("/stack-categories", r.stackCategory.CreateCategory)
+	protected.Put("/stack-categories/:id", r.stackCategory.UpdateCategory)
+	protected.Delete("/stack-categories/:id", r.stackCategory.DeleteCategory)
+
+	// Tech Stack Items
+	protected.Get("/stack-items", r.stackItem.AdminListItems)
+	protected.Get("/stack-items/:id", r.stackItem.GetItem)
+	protected.Post("/stack-items", r.stackItem.CreateItem)
+	protected.Put("/stack-items/:id", r.stackItem.UpdateItem)
+	protected.Delete("/stack-items/:id", r.stackItem.DeleteItem)
 
 	// Skills
 	protected.Get("/skills", r.skill.AdminListSkills)
@@ -93,7 +155,7 @@ func (r *Router) Setup() {
 	protected.Delete("/experiences/:id", r.experience.DeleteExperience)
 
 	// Educations
-	protected.Get("/educations", r.education.ListEducations)
+	protected.Get("/educations", r.education.AdminListEducations)
 	protected.Post("/educations", r.education.CreateEducation)
 	protected.Put("/educations/:id", r.education.UpdateEducation)
 	protected.Delete("/educations/:id", r.education.DeleteEducation)
@@ -105,4 +167,10 @@ func (r *Router) Setup() {
 	// Contacts
 	protected.Get("/contacts", r.contact.AdminListContacts)
 	protected.Patch("/contacts/:id/read", r.contact.MarkAsRead)
+
+	// Running Activities
+	protected.Get("/running-activities", r.runningActivity.AdminListActivities)
+	protected.Post("/running-activities", r.runningActivity.CreateActivity)
+	protected.Put("/running-activities/:id", r.runningActivity.UpdateActivity)
+	protected.Delete("/running-activities/:id", r.runningActivity.DeleteActivity)
 }

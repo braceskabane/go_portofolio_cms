@@ -27,9 +27,8 @@ func main() {
 	// ── 1. Load config ────────────────────────────────────────────────────────
 	cfg := config.Load()
 
-	// ── 2. Connect database ───────────────────────────────────────────────────
-	db := database.Connect(cfg)
-	database.AutoMigrate(db)
+	// ── 2. Connect database & auto migrate ────────────────────────────────────
+	db := database.Connect(cfg) // AutoMigrate sudah dijalankan di Connect
 
 	// ── 3. Init Fiber app ─────────────────────────────────────────────────────
 	app := fiber.New(fiber.Config{
@@ -46,33 +45,51 @@ func main() {
 	admin.SetupAdmin(app, cfg, db)
 
 	// ── 6. Wire services ──────────────────────────────────────────────────────
-	authSvc       := service.NewAuthService(db)
-	projectSvc    := service.NewProjectService(db)
-	skillSvc      := service.NewSkillService(db)
-	experienceSvc := service.NewExperienceService(db)
-	educationSvc  := service.NewEducationService(db)
-	profileSvc    := service.NewProfileService(db)
-	contactSvc    := service.NewContactService(db)
+	authSvc                := service.NewAuthService(db)
+	projectSvc             := service.NewProjectService(db)
+	assetSvc               := service.NewAssetService(db)
+	projectCategorySvc     := service.NewProjectCategoryService(db)
+	experienceCategorySvc  := service.NewExperienceCategoryService(db)
+	stackCategorySvc       := service.NewStackCategoryService(db)
+	stackItemSvc           := service.NewStackItemService(db)
+	skillSvc               := service.NewSkillService(db)
+	experienceSvc          := service.NewExperienceService(db)
+	educationSvc           := service.NewEducationService(db)
+	profileSvc             := service.NewProfileService(db)
+	contactSvc             := service.NewContactService(db)
+	runningActivitySvc     := service.NewRunningActivityService(db)
 
 	// ── 7. Wire handlers ──────────────────────────────────────────────────────
-	authHandler       := handler.NewAuthHandler(authSvc)
-	projectHandler    := handler.NewProjectHandler(projectSvc)
-	skillHandler      := handler.NewSkillHandler(skillSvc)
-	experienceHandler := handler.NewExperienceHandler(experienceSvc)
-	educationHandler  := handler.NewEducationHandler(educationSvc)
-	profileHandler    := handler.NewProfileHandler(profileSvc)
-	contactHandler    := handler.NewContactHandler(contactSvc)
+	authHandler                := handler.NewAuthHandler(authSvc)
+	projectHandler             := handler.NewProjectHandler(projectSvc)
+	assetHandler               := handler.NewAssetHandler(assetSvc)
+	projectCategoryHandler     := handler.NewProjectCategoryHandler(projectCategorySvc)
+	experienceCategoryHandler  := handler.NewExperienceCategoryHandler(experienceCategorySvc)
+	stackCategoryHandler       := handler.NewStackCategoryHandler(stackCategorySvc)
+	stackItemHandler           := handler.NewStackItemHandler(stackItemSvc)
+	skillHandler               := handler.NewSkillHandler(skillSvc)
+	experienceHandler          := handler.NewExperienceHandler(experienceSvc)
+	educationHandler           := handler.NewEducationHandler(educationSvc)
+	profileHandler             := handler.NewProfileHandler(profileSvc)
+	contactHandler             := handler.NewContactHandler(contactSvc)
+	runningActivityHandler     := handler.NewRunningActivityHandler(runningActivitySvc)
 
 	// ── 8. Register routes ────────────────────────────────────────────────────
 	router := NewRouter(
 		app,
 		authHandler,
 		projectHandler,
+		assetHandler,
+		projectCategoryHandler,
+		experienceCategoryHandler,
+		stackCategoryHandler,
+		stackItemHandler,
 		skillHandler,
 		experienceHandler,
 		educationHandler,
 		profileHandler,
 		contactHandler,
+		runningActivityHandler,
 	)
 	router.Setup()
 

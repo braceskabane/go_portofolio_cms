@@ -4,6 +4,7 @@ import (
 	"portfolio-cms/internal/dto"
 	"portfolio-cms/internal/middleware"
 	"portfolio-cms/internal/service"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -43,7 +44,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return Unauthorized(c, err.Error())
 	}
-	// Generate real tokens here in handler (avoids import cycle)
+
 	accessToken, err := middleware.GenerateAccessToken(user.ID.String(), user.Email, user.Role)
 	if err != nil {
 		return InternalError(c, "Failed to generate token")
@@ -52,6 +53,9 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return InternalError(c, "Failed to generate token")
 	}
+
+	middleware.SetSessionCookie(c, refreshToken, 7*24*time.Hour)
+
 	return OK(c, dto.TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -103,4 +107,10 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 		return NotFound(c, "User not found")
 	}
 	return OK(c, user)
+}
+
+// POST /logout
+func (h *AuthHandler) Logout(c *fiber.Ctx) error {
+	middleware.ClearSessionCookie(c)                     // hapus cookie session
+	return c.Redirect("/admin/login", fiber.StatusSeeOther) // arahkan ke login
 }

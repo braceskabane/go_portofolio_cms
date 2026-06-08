@@ -39,18 +39,41 @@ func Connect(cfg *config.Config) *gorm.DB {
 }
 
 // AutoMigrate runs GORM auto-migration for all models
-func AutoMigrate(db *gorm.DB) {
-	err := db.AutoMigrate(
+func AutoMigrate(db *gorm.DB) error {
+	return db.AutoMigrate(
+		// Auth
 		&model.User{},
-		&model.Project{},
-		&model.Skill{},
-		&model.Experience{},
-		&model.Education{},
-		&model.Contact{},
+
+		// Profile
 		&model.Profile{},
+
+		// Tech Stack — category harus sebelum item (FK)
+		&model.StackCategory{},
+		&model.StackItem{},
+
+		// Project Category harus sebelum Project
+		&model.ProjectCategory{},
+
+		// Experience Category harus sebelum Experience
+		&model.ExperienceCategory{},
+
+		// Skill (tidak ada FK constraint ke tabel lain)
+		&model.Skill{},
+
+		// Project & Experience (relasi many2many akan dibuat otomatis)
+		&model.Project{},
+		&model.Experience{},
+
+		// Education
+		&model.Education{},
+
+		// Contact
+		&model.Contact{},
+
+		// Running Activity
+		&model.RunningActivity{},
+
+		// Asset (polymorphic, aman setelah tabel owner)
+		&model.Asset{},
 	)
-	if err != nil {
-		log.Fatalf("❌ AutoMigrate failed: %v", err)
-	}
-	log.Println("✅ Database migrated successfully")
 }
