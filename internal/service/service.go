@@ -1,10 +1,17 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"portfolio-cms/internal/dto"
 	"portfolio-cms/internal/model"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -1044,18 +1051,18 @@ func (s *runningActivityService) Create(req *dto.CreateRunningActivityRequest) (
 		Title:          req.Title,
 		Notes:          req.Notes,
 		MapImageURL:    req.MapImageURL,
-		DurationSec:    req.DurationSec,
-		DistanceMeters: req.DistanceMeters,
-		TotalCalories:  req.TotalCalories,
-		ActiveCalories: req.ActiveCalories,
-		AvgPaceSec:     req.AvgPaceSec,
-		AvgSpeedKph:    req.AvgSpeedKph,
-		AvgCadence:     req.AvgCadence,
-		AvgStride:      req.AvgStride,
-		Steps:          req.Steps,
-		AvgHeartRate:   req.AvgHeartRate,
 		IsPublished:    req.IsPublished,
 	}
+	if req.DurationSec != nil    { a.DurationSec = *req.DurationSec }
+	if req.DistanceMeters != nil { a.DistanceMeters = *req.DistanceMeters }
+	if req.TotalCalories != nil  { a.TotalCalories = *req.TotalCalories }
+	if req.ActiveCalories != nil { a.ActiveCalories = *req.ActiveCalories }
+	if req.AvgPaceSec != nil     { a.AvgPaceSec = *req.AvgPaceSec }
+	if req.AvgSpeedKph != nil    { a.AvgSpeedKph = *req.AvgSpeedKph }
+	if req.AvgCadence != nil     { a.AvgCadence = *req.AvgCadence }
+	if req.AvgStride != nil      { a.AvgStride = *req.AvgStride }
+	if req.Steps != nil          { a.Steps = *req.Steps }
+	if req.AvgHeartRate != nil   { a.AvgHeartRate = *req.AvgHeartRate }
 	if req.Date != nil {
 		t, err := time.Parse(time.RFC3339, *req.Date)
 		if err != nil {
@@ -1100,4 +1107,146 @@ func (s *runningActivityService) Update(id string, req *dto.UpdateRunningActivit
 
 func (s *runningActivityService) Delete(id string) error {
 	return s.db.Delete(&model.RunningActivity{}, "id = ?", id).Error
+}
+
+// ─── Gemini Vision Service ─────────────────────────────────────────────────────
+
+type GeminiService interface {
+	ExtractRunningActivity(imageBytes []byte, mimeType string) (*dto.CreateRunningActivityRequest, error)
+}
+
+type geminiService struct {
+	apiKey string
+	model  string
+}
+
+func NewGeminiService(apiKey, model string) GeminiService {
+	return &geminiService{apiKey: apiKey, model: model}
+}
+
+// geminiRequest adalah struktur request ke Gemini API
+type geminiRequest struct {
+	Contents []geminiContent `json:"contents"`
+}
+
+type geminiContent struct {
+	Parts []geminiPart `json:"parts"`
+}
+
+type geminiPart struct {
+	Text       string          `json:"text,omitempty"`
+	InlineData *geminiFileData `json:"inline_data,omitempty"`
+}
+
+type geminiFileData struct {
+	MimeType string `json:"mime_type"`
+	Data     string `json:"data"`
+}
+
+type geminiResponse struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+func (s *geminiService) ExtractRunningActivity(imageBytes []byte, mimeType string) (*dto.CreateRunningActivityRequest, error) {
+	// Encode gambar ke base64
+	b64 := base64.StdEncoding.EncodeToString(imageBytes)
+
+	prompt := `Kamu adalah asisten yang mengekstrak data aktivitas lari dari screenshot aplikasi Huawei Health.
+Ekstrak semua data yang tersedia dari gambar ini dan kembalikan HANYA JSON valid tanpa penjelasan, tanpa markdown, tanpa backtick.
+
+Format JSON yang harus dikembalikan (gunakan null jika data tidak tersedia di gambar):
+{
+  "title": "string (nama aktivitas jika ada, atau null)",
+  "date": "string (format RFC3339 contoh: 2024-01-15T07:30:00Z, atau null jika tidak ada)",
+  "duration_sec": integer (total durasi dalam detik, atau null),
+  "distance_meters": float (jarak dalam meter, atau null),
+  "total_calories": float (total kalori, atau null),
+  "active_calories": float (kalori aktif, atau null),
+  "avg_pace_sec": integer (rata-rata pace dalam detik per km, contoh 6:30/km = 390, atau null),
+  "avg_speed_kph": float (kecepatan rata-rata km/jam, atau null),
+  "avg_cadence": integer (rata-rata cadence langkah per menit, atau null),
+  "avg_stride": float (rata-rata panjang langkah dalam meter, atau null),
+  "steps": integer (total langkah, atau null),
+  "avg_heart_rate": integer (rata-rata detak jantung bpm, atau null),
+  "notes": null,
+  "map_image_url": null,
+  "is_published": false
+}
+
+Petunjuk konversi:
+- Jarak: jika tampil "5.2 km" maka distance_meters = 5200
+- Durasi: jika tampil "35:20" berarti 35 menit 20 detik = 2120 detik
+- Pace: jika tampil "6'45''" atau "6:45/km" berarti 6 menit 45 detik = 405 detik
+- Kalori: ambil angka langsung
+- Tanggal: cari tanggal dan jam di layar, konversi ke RFC3339 dengan timezone +07:00 (WIB)`
+
+	reqBody := geminiRequest{
+		Contents: []geminiContent{
+			{
+				Parts: []geminiPart{
+					{InlineData: &geminiFileData{MimeType: mimeType, Data: b64}},
+					{Text: prompt},
+				},
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf(
+		"https://generativelanguage.googleapis.com/v1/models/%s:generateContent?key=%s",
+		s.model, s.apiKey,
+	)
+
+	resp, err := http.Post(url, "application/json", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Gemini API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Gemini response: %w", err)
+	}
+
+	var geminiResp geminiResponse
+	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Gemini response: %w", err)
+	}
+
+	if geminiResp.Error != nil {
+		return nil, fmt.Errorf("Gemini API error: %s", geminiResp.Error.Message)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return nil, errors.New("no response from Gemini")
+	}
+
+	rawText := geminiResp.Candidates[0].Content.Parts[0].Text
+
+	// Bersihkan jika Gemini tetap membungkus dengan ```json
+	rawText = strings.TrimSpace(rawText)
+	rawText = strings.TrimPrefix(rawText, "```json")
+	rawText = strings.TrimPrefix(rawText, "```")
+	rawText = strings.TrimSuffix(rawText, "```")
+	rawText = strings.TrimSpace(rawText)
+
+	var result dto.CreateRunningActivityRequest
+	if err := json.Unmarshal([]byte(rawText), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse extracted data: %w — raw: %s", err, rawText)
+	}
+
+	return &result, nil
 }

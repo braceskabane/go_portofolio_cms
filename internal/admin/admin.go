@@ -106,6 +106,8 @@ func SetupAdmin(app *fiber.App, cfg *config.Config, db *gorm.DB) {
 	protected.Get("/running-activities", RunningActivitiesPage(db))
 	protected.Get("/running-activities/new", RunningActivityFormPage(db, ""))
 	protected.Get("/running-activities/:id/edit", RunningActivityFormPage(db, ""))
+	protected.Post("/running-activities/preview-screenshots", PreviewScreenshotsHandler(db))
+	protected.Post("/running-activities/batch", BatchCreateRunningActivitiesHandler(db)) 
 	protected.Post("/running-activities", CreateRunningActivityHandler(db))
 	protected.Post("/running-activities/:id", UpdateRunningActivityHandler(db))
 	protected.Delete("/running-activities/:id", DeleteRunningActivityHandler(db))

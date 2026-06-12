@@ -5,7 +5,11 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"portfolio-cms/internal/model"
 	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 //go:embed templates/*.html
@@ -430,4 +434,165 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "…"
+}
+
+// ── UI Component Helpers ──────────────────────────────────────────────────────
+
+func notifBanner(kind, message string) string {
+	borderColor := "#16a34a"
+	color := "#15803d"
+	bgColor := "#f8fafb"
+
+	if kind == "info" {
+		borderColor = "#94a3b8"
+		color = "#475569"
+		bgColor = "#f8fafb"
+	}
+
+	return fmt.Sprintf(`
+<div id="notif-banner" style="
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;margin-bottom:18px;
+  border-radius:4px;
+  border-left:3px solid %s;
+  background:%s;
+  color:%s;
+  font-size:13px;font-weight:400;
+  animation:flashIn 0.2s ease;
+">
+  <span>%s</span>
+  <button onclick="this.parentElement.style.opacity='0';setTimeout(()=>this.parentElement.remove(),300)"
+    style="margin-left:auto;background:none;border:none;cursor:pointer;opacity:0.4;line-height:1;padding:0;">
+    <svg style="width:13px;height:13px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+  </button>
+</div>`, borderColor, bgColor, color, message)
+}
+
+func formInput(label, name, value, inputType string, required bool, placeholder string) string {
+	req := ""
+	reqMark := ""
+	if required {
+		req = "required"
+		reqMark = `<span class="text-red-500 ml-0.5">*</span>`
+	}
+	return fmt.Sprintf(`
+<div>
+  <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">%s%s</label>
+  <input type="%s" name="%s" value="%s" placeholder="%s" %s
+         class="w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400
+                focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400 transition-all"/>
+</div>`, label, reqMark, inputType, name, value, placeholder, req)
+}
+
+func formTextarea(label, name, value string, rows int, placeholder string) string {
+	return fmt.Sprintf(`
+<div>
+  <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">%s</label>
+  <textarea name="%s" rows="%d" placeholder="%s"
+            class="w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400
+                   focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400 transition-all resize-y">%s</textarea>
+</div>`, label, name, rows, placeholder, value)
+}
+
+func toggleSwitch(label, name string, checked bool, description string) string {
+	checkedAttr := ""
+	if checked {
+		checkedAttr = "checked"
+	}
+	return fmt.Sprintf(`
+<div class="flex items-start justify-between gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50/50">
+  <div>
+    <p class="text-sm font-medium text-gray-800">%s</p>
+    <p class="text-xs text-gray-500 mt-0.5">%s</p>
+  </div>
+  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-0.5">
+    <input type="hidden" name="%s" value="false">
+    <input type="checkbox" name="%s" value="true" %s class="sr-only peer">
+    <div class="w-10 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-gray-400 rounded-full peer
+                peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all
+                peer-checked:bg-gray-900 transition-colors"></div>
+  </label>
+</div>`, label, description, name, name, checkedAttr)
+}
+
+func buildCheckboxGroup(skills []model.Skill, selected []model.Skill, fieldName string) string {
+	if len(skills) == 0 {
+		return `<span class="text-sm text-gray-400 italic">Belum ada skill tersedia</span>`
+	}
+	result := ""
+	for _, sk := range skills {
+		checked := ""
+		for _, ps := range selected {
+			if ps.ID == sk.ID {
+				checked = "checked"
+				break
+			}
+		}
+		checkedClass := ""
+		if checked != "" {
+			checkedClass = "border-gray-800 bg-gray-800 text-white"
+		} else {
+			checkedClass = "border-gray-200 bg-white text-gray-700 hover:border-gray-400"
+		}
+		result += fmt.Sprintf(`
+<label class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer text-xs font-medium transition-all %s select-none">
+  <input type="checkbox" name="%s" value="%s" %s class="sr-only peer">
+  <span class="peer-checked:text-white">%s</span>
+</label>`, checkedClass, fieldName, sk.ID, checked, sk.Name)
+	}
+	return result
+}
+
+func buildStackCheckboxGroup(items []model.StackItem, selected []model.StackItem) string {
+	if len(items) == 0 {
+		return `<span class="text-sm text-gray-400 italic">Belum ada stack item tersedia</span>`
+	}
+	result := ""
+	for _, st := range items {
+		checked := ""
+		for _, ps := range selected {
+			if ps.ID == st.ID {
+				checked = "checked"
+				break
+			}
+		}
+		catLabel := ""
+		if st.Category.Name != "" {
+			catLabel = fmt.Sprintf(`<span class="opacity-60 font-normal">· %s</span>`, st.Category.Name)
+		}
+		checkedClass := ""
+		if checked != "" {
+			checkedClass = "border-violet-600 bg-violet-600 text-white"
+		} else {
+			checkedClass = "border-gray-200 bg-white text-gray-700 hover:border-violet-400"
+		}
+		result += fmt.Sprintf(`
+<label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-xs font-medium transition-all %s select-none">
+  <input type="checkbox" name="stack_item_ids" value="%s" %s class="sr-only">
+  %s %s
+</label>`, checkedClass, st.ID, checked, st.Name, catLabel)
+	}
+	return result
+}
+
+// ── Misc helpers ──────────────────────────────────────────────────────────────
+
+func dateOrEmpty(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
+func getFormArray(c *fiber.Ctx, key string) []string {
+	var values []string
+	c.Request().PostArgs().VisitAll(func(k, v []byte) {
+		if string(k) == key {
+			values = append(values, string(v))
+		}
+	})
+	return values
 }

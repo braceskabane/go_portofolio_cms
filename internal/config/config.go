@@ -8,12 +8,18 @@ import (
 	"github.com/joho/godotenv"
 )
 
+type GeminiConfig struct {
+	APIKey string
+	Model  string
+}
+
 type Config struct {
 	App      AppConfig
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Admin    AdminConfig
 	CORS     CORSConfig
+	Gemini   GeminiConfig
 }
 
 type AppConfig struct {
@@ -85,6 +91,10 @@ func Load() *Config {
 		},
 		CORS: CORSConfig{
 			AllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
+		},
+		Gemini: GeminiConfig{
+			APIKey: getEnv("GEMINI_API_KEY", ""),
+			Model:  getEnv("GEMINI_MODEL", "gemini-1.5-flash"),
 		},
 	}
 

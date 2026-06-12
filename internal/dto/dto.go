@@ -293,21 +293,21 @@ type SendContactRequest struct {
 // ─── Running Activity ─────────────────────────────────────────────────────────
 
 type CreateRunningActivityRequest struct {
-	Title          string  `json:"title"`
-	Notes          string  `json:"notes"`
-	MapImageURL    string  `json:"map_image_url"`
-	DurationSec    int     `json:"duration_sec"`
-	DistanceMeters float64 `json:"distance_meters"`
-	TotalCalories  int     `json:"total_calories"`
-	ActiveCalories int     `json:"active_calories"`
-	AvgPaceSec     int     `json:"avg_pace_sec"`
-	AvgSpeedKph    float64 `json:"avg_speed_kph"`
-	AvgCadence     int     `json:"avg_cadence"`
-	AvgStride      float64 `json:"avg_stride"`
-	Steps          int     `json:"steps"`
-	AvgHeartRate   int     `json:"avg_heart_rate"`
-	IsPublished    bool    `json:"is_published"`
-	Date           *string `json:"date"` // RFC3339
+	Title          string   `json:"title"`
+	Notes          string   `json:"notes"`
+	MapImageURL    string   `json:"map_image_url"`
+	DurationSec    *int     `json:"duration_sec"`      
+	DistanceMeters *float64 `json:"distance_meters"`   
+	TotalCalories  *float64 `json:"total_calories"`
+	ActiveCalories *float64 `json:"active_calories"`   
+	AvgPaceSec     *int     `json:"avg_pace_sec"`      
+	AvgSpeedKph    *float64 `json:"avg_speed_kph"`     
+	AvgCadence     *int     `json:"avg_cadence"`       
+	AvgStride      *float64 `json:"avg_stride"`       
+	Steps          *int     `json:"steps"`             
+	AvgHeartRate   *int     `json:"avg_heart_rate"`    
+	IsPublished    bool     `json:"is_published"`
+	Date           *string  `json:"date"`
 }
 
 type UpdateRunningActivityRequest struct {
@@ -316,8 +316,8 @@ type UpdateRunningActivityRequest struct {
 	MapImageURL    *string  `json:"map_image_url"`
 	DurationSec    *int     `json:"duration_sec"`
 	DistanceMeters *float64 `json:"distance_meters"`
-	TotalCalories  *int     `json:"total_calories"`
-	ActiveCalories *int     `json:"active_calories"`
+	TotalCalories  *float64 `json:"total_calories"`
+	ActiveCalories *float64 `json:"active_calories"`
 	AvgPaceSec     *int     `json:"avg_pace_sec"`
 	AvgSpeedKph    *float64 `json:"avg_speed_kph"`
 	AvgCadence     *int     `json:"avg_cadence"`

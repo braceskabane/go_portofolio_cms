@@ -170,6 +170,7 @@ func (r *Router) Setup() {
 
 	// Running Activities
 	protected.Get("/running-activities", r.runningActivity.AdminListActivities)
+	protected.Post("/running-activities/screenshot", r.runningActivity.CreateActivityFromScreenshot) 
 	protected.Post("/running-activities", r.runningActivity.CreateActivity)
 	protected.Put("/running-activities/:id", r.runningActivity.UpdateActivity)
 	protected.Delete("/running-activities/:id", r.runningActivity.DeleteActivity)

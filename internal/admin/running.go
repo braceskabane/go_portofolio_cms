@@ -2,7 +2,11 @@ package admin
 
 import (
 	"fmt"
+	"io"
+	"portfolio-cms/internal/config"
+	"portfolio-cms/internal/dto"
 	"portfolio-cms/internal/model"
+	"portfolio-cms/internal/service"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -42,7 +46,7 @@ func RunningActivitiesPage(db *gorm.DB) fiber.Handler {
 		stats := ""
 		if total > 0 {
 			stats = fmt.Sprintf(`
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
   %s %s %s %s
 </div>`,
 				statCard("🏃", "Total Runs", fmt.Sprintf("%d", total), "#e0e7ff"),
@@ -67,58 +71,86 @@ func RunningActivitiesPage(db *gorm.DB) fiber.Handler {
 			}
 
 			rows += fmt.Sprintf(`
-<tr style="background:%s;transition:background 0.15s;" onmouseover="this.style.background='#f5f4f5'" onmouseout="this.style.background='%s'">
-  <td style="padding:12px 16px;font-size:13px;">%s</td>
-  <td style="padding:12px 16px;font-size:13px;font-weight:500;">%s</td>
-  <td style="padding:12px 16px;font-size:13px;">%.2f km</td>
-  <td style="padding:12px 16px;font-size:13px;">%d min</td>
-  <td style="padding:12px 16px;font-size:13px;">%s</td>
-  <td style="padding:12px 16px;font-size:13px;">%d bpm</td>
-  <td style="padding:12px 16px;">%s</td>
-  <td style="padding:12px 16px;display:flex;gap:8px;">
-    <a href="/admin/running-activities/%s/edit" style="font-size:12px;font-weight:500;color:#1e1d1e;text-decoration:none;padding:4px 10px;background:#f0eff0;border-radius:4px;">Edit</a>
-    <button onclick="confirmDelete('/admin/running-activities/%s', '%s')" style="font-size:12px;font-weight:500;color:#b91c1c;background:none;border:none;cursor:pointer;padding:4px 10px;background:#fee2e2;border-radius:4px;">Delete</button>
-  </td>
-</tr>`,
+			<tr style="background:%s;transition:background 0.15s;" onmouseover="this.style.background='#f5f4f5'" onmouseout="this.style.background='%s'">
+				<td style="padding:12px 16px;font-size:13px;">%d</td>
+				<td style="padding:12px 16px;font-size:13px;">%s</td>
+				<td style="padding:12px 16px;font-size:13px;font-weight:500;">%s</td>
+				<td style="padding:12px 16px;font-size:13px;">%.2f</td>
+				<td style="padding:12px 16px;font-size:13px;">%d</td>
+				<td style="padding:12px 16px;font-size:13px;">%s</td>
+				<td style="padding:12px 16px;font-size:13px;">%.1f</td>
+				<td style="padding:12px 16px;font-size:13px;">%d</td>
+				<td style="padding:12px 16px;font-size:13px;">%.0f</td>
+				<td style="padding:12px 16px;font-size:13px;">%.0f</td>
+				<td style="padding:12px 16px;font-size:13px;">%d</td>
+				<td style="padding:12px 16px;font-size:13px;">%.2f</td>
+				<td style="padding:12px 16px;font-size:13px;">%d</td>
+				<td style="padding:12px 16px;">%s</td>
+				<td style="padding:12px 16px;white-space:nowrap;">
+  					<div style="display:flex;gap:8px;">
+						<a href="/admin/running-activities/%s/edit" style="font-size:12px;font-weight:500;color:#1e1d1e;text-decoration:none;padding:4px 10px;background:#f0eff0;border-radius:4px;">Edit</a>
+						<button onclick="confirmDelete('/admin/running-activities/%s', '%s')" style="font-size:12px;font-weight:500;color:#b91c1c;background:none;border:none;cursor:pointer;padding:4px 10px;background:#fee2e2;border-radius:4px;">Delete</button>
+					</div>
+				</td>
+			</tr>`,
 				bg, bg,
-				a.Date.Format("2006-01-02"),
-				a.Title,
+				i+1,                                // nomor
+				a.Date.Format("2006-01-02"),        // tanggal
+				a.Title,                            // title
 				distanceKm,
-				durationMin,
-				pace,
-				a.AvgHeartRate,
-				publishedBadge,
-				a.ID, a.ID, a.Date.Format("2006-01-02")+" "+a.Title,
+    			durationMin,                      
+				pace,                               // pace
+				a.AvgSpeedKph,                      // speed (km/h)
+				a.AvgHeartRate,                     // hr (bpm)
+				a.TotalCalories,                    // kalori
+				a.ActiveCalories,                   // kalori aktif
+				a.AvgCadence,                       // cadence
+				a.AvgStride,                        // stride (m)
+				a.Steps,                            // steps
+				publishedBadge,                     // status
+				a.ID, a.ID, a.Date.Format("2006-01-02")+" "+a.Title, // untuk edit/delete
 			)
 		}
 
 		empty := ""
 		if len(activities) == 0 {
-			empty = fmt.Sprintf(`<tr><td colspan="8" style="text-align:center;padding:40px;">%s</td></tr>`, emptyState("🏃", "Belum ada aktivitas lari", "Catat lari pertama kamu", "Log New Run", "/admin/running-activities/new"))
+			empty = fmt.Sprintf(`<tr><td colspan="15" style="text-align:center;padding:40px;">%s</td></tr>`, emptyState("🏃", "Belum ada aktivitas lari", "Catat lari pertama kamu", "Log New Run", "/admin/running-activities/new"))
 		}
 
 		content := fmt.Sprintf(`
 %s
-<div style="text-align:right;margin-bottom:24px;">
+<div style="display:flex;justify-content:flex-end;gap:10px;margin-bottom:24px;">
+  <button onclick="openGeminiModal()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;font-size:13px;">
+    ✦ Add via Gemini
+  </button>
   <a href="/admin/running-activities/new" style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#1e1d1e;color:#f5f4f5;border-radius:6px;text-decoration:none;font-weight:500;font-size:13px;">
     + New Activity
   </a>
 </div>
 %s
-<div style="background:#ffffff;border-radius:10px;border:1px solid #e5e3e4;overflow:hidden;">
-  <table style="width:100%%;border-collapse:collapse;">
-    <thead><tr style="background:#f8f7f8;">
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Date</th>
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Title</th>
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Distance</th>
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Duration</th>
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Pace</th>
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Avg HR</th>
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Status</th>
-      <th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Actions</th>
-    </tr></thead>
-    <tbody>%s %s</tbody>
-  </table>
+<div style="background:#ffffff;border-radius:10px;border:1px solid #e5e3e4;overflow:hidden;min-width:0;">
+  <div style="overflow-x:auto;">
+    <table style="width:100%%;border-collapse:collapse;min-width:1200px;">
+		<thead><tr style="background:#f8f7f8;">
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">#</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Tanggal</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Title</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Jarak (m)</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Durasi (s)</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Pace</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Speed (km/h)</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">HR (bpm)</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Kalori</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Kalori Aktif</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Cadence</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Stride (m)</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Steps</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Status</th>
+			<th style="padding:12px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b6a6b;">Actions</th>
+		</tr></thead>
+    	<tbody>%s %s</tbody>
+  	</table>
+  </div>
 </div>
 
 <!-- Delete Modal -->
@@ -147,7 +179,7 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', function()
 });
 </script>`, notifHTML, stats, rows, empty)
 
-		return c.Type("html").SendString(layout("Running Activities", "running", content))
+		return c.Type("html").SendString(layout("Running Activities", "running", content + geminiStyles + geminiModalHTML + geminiScript))
 	}
 }
 
@@ -258,8 +290,8 @@ func CreateRunningActivityHandler(db *gorm.DB) fiber.Handler {
 			MapImageURL:    c.FormValue("map_image_url"),
 			DurationSec:    formInt(c, "duration_sec"),
 			DistanceMeters: formFloat(c, "distance_meters"),
-			TotalCalories:  formInt(c, "total_calories"),
-			ActiveCalories: formInt(c, "active_calories"),
+			TotalCalories:  formFloat(c, "total_calories"),
+			ActiveCalories: formFloat(c, "active_calories"),
 			AvgPaceSec:     formInt(c, "avg_pace_sec"),
 			AvgSpeedKph:    formFloat(c, "avg_speed_kph"),
 			AvgCadence:     formInt(c, "avg_cadence"),
@@ -289,8 +321,8 @@ func UpdateRunningActivityHandler(db *gorm.DB) fiber.Handler {
 		activity.MapImageURL = c.FormValue("map_image_url")
 		activity.DurationSec = formInt(c, "duration_sec")
 		activity.DistanceMeters = formFloat(c, "distance_meters")
-		activity.TotalCalories = formInt(c, "total_calories")
-		activity.ActiveCalories = formInt(c, "active_calories")
+		activity.TotalCalories = formFloat(c, "total_calories")
+		activity.ActiveCalories = formFloat(c, "active_calories")
 		activity.AvgPaceSec = formInt(c, "avg_pace_sec")
 		activity.AvgSpeedKph = formFloat(c, "avg_speed_kph")
 		activity.AvgCadence = formInt(c, "avg_cadence")
@@ -311,6 +343,197 @@ func DeleteRunningActivityHandler(db *gorm.DB) fiber.Handler {
 	}
 }
 
+// ── Helper untuk pointer dereference ──────────────────────────────────────────
+
+func getInt(v *int) int {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func getFloat64(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func getString(v string) string {
+	return v
+}
+
+// ── Batch Create Handler  ───────────────────────────────────────────────
+
+func BatchCreateRunningActivitiesHandler(db *gorm.DB) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var req struct {
+			Activities []dto.CreateRunningActivityRequest `json:"activities"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"success": false,
+				"message": "Invalid JSON body",
+			})
+		}
+
+		var activities []model.RunningActivity
+		for _, a := range req.Activities {
+			// Konversi date string ke time.Time, fallback ke zero time jika gagal
+			date := time.Time{}
+			if a.Date != nil && *a.Date != "" {
+				if parsed, err := time.Parse(time.RFC3339, *a.Date); err == nil {
+					date = parsed
+				} else if parsed, err := time.Parse("2006-01-02", *a.Date); err == nil {
+					date = parsed
+				}
+			}
+
+			act := model.RunningActivity{
+				Date:           date,
+				Title:          a.Title,
+				Notes:          a.Notes,
+				MapImageURL:    a.MapImageURL,
+				DurationSec:    getInt(a.DurationSec),
+				DistanceMeters: getFloat64(a.DistanceMeters),
+				TotalCalories:  getFloat64(a.TotalCalories),
+				ActiveCalories: getFloat64(a.ActiveCalories),
+				AvgPaceSec:     getInt(a.AvgPaceSec),
+				AvgSpeedKph:    getFloat64(a.AvgSpeedKph),
+				AvgCadence:     getInt(a.AvgCadence),
+				AvgStride:      getFloat64(a.AvgStride),
+				Steps:          getInt(a.Steps),
+				AvgHeartRate:   getInt(a.AvgHeartRate),
+				IsPublished:    a.IsPublished,
+			}
+			activities = append(activities, act)
+		}
+
+		if len(activities) == 0 {
+			return c.JSON(fiber.Map{"success": true, "count": 0})
+		}
+
+		if err := db.Create(&activities).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"success": false,
+				"message": err.Error(),
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"success": true,
+			"count":   len(activities),
+		})
+	}
+}
+
+// ── Preview Screenshots via Gemini ────────────────────────────────────────────
+
+func PreviewScreenshotsHandler(db *gorm.DB) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		cfg := config.Cfg
+		if cfg.Gemini.APIKey == "" {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "GEMINI_API_KEY belum dikonfigurasi",
+			})
+		}
+
+		form, err := c.MultipartForm()
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Gagal membaca form"})
+		}
+
+		files := form.File["screenshots"]
+		if len(files) == 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Tidak ada file yang diupload"})
+		}
+		if len(files) > 10 {
+			return c.Status(400).JSON(fiber.Map{"error": "Maksimal 10 foto sekaligus"})
+		}
+
+		geminiSvc := service.NewGeminiService(cfg.Gemini.APIKey, cfg.Gemini.Model)
+
+		type Result struct {
+			Index    int                              `json:"index"`
+			Filename string                           `json:"filename"`
+			Data     *dto.CreateRunningActivityRequest `json:"data"`
+			Error    string                           `json:"error,omitempty"`
+		}
+
+		results := make([]Result, 0, len(files))
+
+		for i, fileHeader := range files {
+			mimeType := fileHeader.Header.Get("Content-Type")
+			allowed := map[string]bool{
+				"image/jpeg": true,
+				"image/png":  true,
+				"image/webp": true,
+			}
+
+			if !allowed[mimeType] {
+				results = append(results, Result{
+					Index:    i,
+					Filename: fileHeader.Filename,
+					Error:    "Format tidak didukung (hanya JPEG/PNG/WebP)",
+				})
+				continue
+			}
+
+			if fileHeader.Size > 10*1024*1024 {
+				results = append(results, Result{
+					Index:    i,
+					Filename: fileHeader.Filename,
+					Error:    "File terlalu besar (maks 10MB)",
+				})
+				continue
+			}
+
+			f, err := fileHeader.Open()
+			if err != nil {
+				results = append(results, Result{
+					Index:    i,
+					Filename: fileHeader.Filename,
+					Error:    "Gagal membaca file",
+				})
+				continue
+			}
+
+			imageBytes, err := io.ReadAll(f)
+			f.Close()
+			if err != nil {
+				results = append(results, Result{
+					Index:    i,
+					Filename: fileHeader.Filename,
+					Error:    "Gagal membaca isi file",
+				})
+				continue
+			}
+
+			extracted, err := geminiSvc.ExtractRunningActivity(imageBytes, mimeType)
+			if err != nil {
+				results = append(results, Result{
+					Index:    i,
+					Filename: fileHeader.Filename,
+					Error:    "Gagal ekstrak: " + err.Error(),
+				})
+				continue
+			}
+
+			results = append(results, Result{
+				Index:    i,
+				Filename: fileHeader.Filename,
+				Data:     extracted,
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"success": true,
+			"total":   len(files),
+			"results": results,
+		})
+	}
+}
+
 // ── Helper kecil untuk parsing form ──
 func formInt(c *fiber.Ctx, key string) int {
 	val := 0
@@ -323,3 +546,339 @@ func formFloat(c *fiber.Ctx, key string) float64 {
 	fmt.Sscanf(c.FormValue(key), "%f", &val)
 	return val
 }
+
+// ─── Blok HTML/CSS/JS Modal Gemini (di luar Sprintf) ──────────────────────
+const geminiStyles = `
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+#dropzone:hover { border-color: #4f46e5; }
+#previewTable td[contenteditable="true"]:focus { outline: 2px solid #4f46e5; border-radius: 2px; background: #eef2ff; }
+#previewTable td { padding: 8px 10px; border-bottom: 1px solid #f0eff0; }
+#previewTable tr:hover td { background: #fafafa; }
+
+/* Scrollbar tabel running */
+.table-scroll::-webkit-scrollbar { height: 8px; }
+.table-scroll::-webkit-scrollbar-track { background: #f0eff0; border-radius: 0 0 10px 10px; }
+.table-scroll::-webkit-scrollbar-thumb { background: #9a9899; border-radius: 4px; }
+.table-scroll::-webkit-scrollbar-thumb:hover { background: #6b6a6b; }
+</style>
+`
+
+const geminiModalHTML = `
+<!-- Gemini Upload Modal -->
+<div id="geminiModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 16px;box-sizing:border-box;">
+  <div style="background:#fff;border-radius:16px;padding:28px;max-width:900px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.25);margin:auto;">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div>
+        <h2 style="font-size:16px;font-weight:600;color:#1e1d1e;">✦ Import via Gemini AI</h2>
+        <p style="font-size:12px;color:#6b6a6b;margin-top:4px;">Upload screenshot Huawei Health, data akan diekstrak otomatis.</p>
+      </div>
+      <button onclick="closeGeminiModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b6a6b;line-height:1;">×</button>
+    </div>
+
+    <!-- Step 1: Upload -->
+    <div id="geminiStep1">
+      <!-- DIV bukan LABEL — hindari double trigger file dialog -->
+      <div id="dropzone" onclick="document.getElementById('geminiFiles').click()"
+        style="display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #d1d5db;border-radius:10px;padding:40px;cursor:pointer;transition:border-color 0.2s,background 0.2s;text-align:center;">
+        <span style="font-size:32px;">📷</span>
+        <span style="font-size:14px;font-weight:500;color:#374151;margin-top:8px;">Klik atau drag foto ke sini</span>
+        <span style="font-size:12px;color:#9ca3af;margin-top:4px;">JPEG, PNG, WebP — maks 10 foto, masing-masing 10MB</span>
+      </div>
+      <!-- Input TERPISAH dari dropzone, bukan di dalam -->
+      <input type="file" id="geminiFiles" accept="image/jpeg,image/png,image/webp" multiple style="display:none;">
+
+      <div id="fileList" style="margin-top:12px;display:none;">
+        <p style="font-size:12px;color:#6b6a6b;" id="fileListLabel"></p>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px;gap:10px;">
+        <button onclick="closeGeminiModal()" style="padding:8px 16px;border:1px solid #e5e3e4;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;">Batal</button>
+        <button id="btnExtract" onclick="extractScreenshots()" disabled style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;font-size:13px;opacity:0.5;">
+          Ekstrak Data →
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: Loading -->
+    <div id="geminiStep2" style="display:none;text-align:center;padding:40px 0;">
+      <div style="font-size:32px;animation:spin 1s linear infinite;display:inline-block;">⏳</div>
+      <p style="font-size:14px;color:#4b5563;margin-top:12px;" id="loadingText">Mengekstrak data dari foto...</p>
+    </div>
+
+    <!-- Step 3: Preview -->
+    <div id="geminiStep3" style="display:none;">
+      <p style="font-size:13px;color:#374151;margin-bottom:12px;">Periksa dan koreksi data sebelum disimpan. Klik sel untuk edit.</p>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;" id="previewTable">
+          <thead>
+            <tr style="background:#f8f7f8;">
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">#</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">FILE</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">TANGGAL</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">TITLE</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">JARAK (m)</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">DURASI (s)</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">PACE (s/km)</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">SPEED (km/h)</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">HR (bpm)</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">KALORI</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">KALORI AKTIF</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">CADENCE</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">STRIDE (m)</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">STEPS</th>
+              <th style="padding:8px 10px;text-align:left;white-space:nowrap;color:#6b6a6b;font-size:11px;">STATUS</th>
+            </tr>
+          </thead>
+          <tbody id="previewBody"></tbody>
+        </table>
+      </div>
+      <div id="errorList" style="margin-top:12px;display:none;">
+        <p style="font-size:12px;color:#b91c1c;font-weight:500;">Foto yang gagal diproses:</p>
+        <ul id="errorItems" style="font-size:12px;color:#b91c1c;margin-top:4px;padding-left:16px;"></ul>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
+        <button onclick="resetGeminiModal()" style="padding:8px 16px;border:1px solid #e5e3e4;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;">← Upload Lagi</button>
+        <button onclick="saveAllActivities()" id="btnSaveAll" style="padding:8px 24px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-weight:500;font-size:13px;cursor:pointer;">
+          Simpan Semua →
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+`
+
+const geminiScript = `
+<script>
+let _previewData = [];
+let _selectedFiles = null; // simpan FileList di sini, TIDAK di input.files
+
+// ── Modal ──
+function openGeminiModal() {
+  document.getElementById('geminiModal').style.display = 'flex';
+  resetGeminiModal();
+}
+function closeGeminiModal() {
+  document.getElementById('geminiModal').style.display = 'none';
+}
+function resetGeminiModal() {
+  document.getElementById('geminiStep1').style.display = 'block';
+  document.getElementById('geminiStep2').style.display = 'none';
+  document.getElementById('geminiStep3').style.display = 'none';
+  document.getElementById('geminiFiles').value = '';
+  document.getElementById('fileList').style.display = 'none';
+  document.getElementById('btnExtract').disabled = true;
+  document.getElementById('btnExtract').style.opacity = '0.5';
+  _previewData = [];
+  _selectedFiles = null;
+}
+
+// ── Input file change (klik biasa) ──
+// Pasang listener sekali saja, BUKAN onchange di HTML
+document.getElementById('geminiFiles').addEventListener('change', function() {
+  if (this.files && this.files.length > 0) {
+    _selectedFiles = this.files;
+    showSelectedFiles(this.files);
+  }
+});
+
+function showSelectedFiles(files) {
+  const names = Array.from(files).map(f => f.name).join(', ');
+  document.getElementById('fileListLabel').textContent = files.length + ' foto dipilih: ' + names;
+  document.getElementById('fileList').style.display = 'block';
+  document.getElementById('btnExtract').disabled = false;
+  document.getElementById('btnExtract').style.opacity = '1';
+}
+
+// ── Drag & drop ──
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  this.style.borderColor = '#4f46e5';
+  this.style.background = '#f5f3ff';
+});
+dz.addEventListener('dragleave', function(e) {
+  e.stopPropagation();
+  this.style.borderColor = '#d1d5db';
+  this.style.background = '';
+});
+dz.addEventListener('drop', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  this.style.borderColor = '#d1d5db';
+  this.style.background = '';
+  const files = e.dataTransfer.files;
+  if (files && files.length > 0) {
+    // Simpan ke _selectedFiles, JANGAN assign ke input.files (read-only di kebanyakan browser)
+    _selectedFiles = files;
+    showSelectedFiles(files);
+  }
+});
+
+// ── Ekstrak ke Gemini ──
+async function extractScreenshots() {
+  // Ambil dari _selectedFiles, bukan dari input.files
+  const files = _selectedFiles;
+  if (!files || files.length === 0) {
+    alert('Pilih foto terlebih dahulu');
+    return;
+  }
+
+  document.getElementById('geminiStep1').style.display = 'none';
+  document.getElementById('geminiStep2').style.display = 'block';
+
+  const formData = new FormData();
+  // Loop semua file — ini yang handle multiple
+  for (let i = 0; i < files.length; i++) {
+    formData.append('screenshots', files[i]);
+  }
+
+  let dots = 0;
+  const interval = setInterval(() => {
+    dots = (dots + 1) % 4;
+    document.getElementById('loadingText').textContent =
+      'Mengekstrak data dari ' + files.length + ' foto' + '.'.repeat(dots);
+  }, 500);
+
+  try {
+    const res = await fetch('/admin/running-activities/preview-screenshots', {
+      method: 'POST',
+      body: formData
+    });
+    const json = await res.json();
+    clearInterval(interval);
+    if (json.error) {
+      alert('Error: ' + json.error);
+      resetGeminiModal();
+      return;
+    }
+    renderPreview(json);
+  } catch (err) {
+    clearInterval(interval);
+    alert('Terjadi kesalahan: ' + err.message);
+    resetGeminiModal();
+  }
+}
+
+// ── Render preview — muncul setelah Gemini selesai proses ──
+function renderPreview(json) {
+  document.getElementById('geminiStep2').style.display = 'none';
+  document.getElementById('geminiStep3').style.display = 'block';
+
+  const tbody = document.getElementById('previewBody');
+  tbody.innerHTML = '';
+  _previewData = [];
+
+  const errors = json.results.filter(r => r.error);
+  const successes = json.results.filter(r => !r.error);
+
+  if (successes.length === 0 && errors.length > 0) {
+    alert('Semua foto gagal diproses. Coba lagi.');
+    resetGeminiModal();
+    return;
+  }
+
+  successes.forEach((r, idx) => {
+    const d = r.data || {};
+    _previewData.push({ ...d, _filename: r.filename });
+    const dateVal = d.date ? d.date.substring(0, 10) : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td style="color:#9ca3af;padding:8px 10px;">' + (idx + 1) + '</td>' +
+      '<td style="color:#6b6a6b;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:8px 10px;" title="' + r.filename + '">' + r.filename + '</td>' +
+      editableCell(idx, 'date', dateVal) +
+      editableCell(idx, 'title', d.title || '') +
+      editableCell(idx, 'distance_meters', d.distance_meters != null ? d.distance_meters : '') +
+      editableCell(idx, 'duration_sec', d.duration_sec != null ? d.duration_sec : '') +
+      editableCell(idx, 'avg_pace_sec', d.avg_pace_sec != null ? d.avg_pace_sec : '') +
+      editableCell(idx, 'avg_speed_kph', d.avg_speed_kph != null ? d.avg_speed_kph : '') +
+      editableCell(idx, 'avg_heart_rate', d.avg_heart_rate != null ? d.avg_heart_rate : '') +
+      editableCell(idx, 'total_calories', d.total_calories != null ? d.total_calories : '') +
+      editableCell(idx, 'active_calories', d.active_calories != null ? d.active_calories : '') +
+      editableCell(idx, 'avg_cadence', d.avg_cadence != null ? d.avg_cadence : '') +
+      editableCell(idx, 'avg_stride', d.avg_stride != null ? d.avg_stride : '') +
+      editableCell(idx, 'steps', d.steps != null ? d.steps : '') +
+      '<td style="padding:8px 10px;"><select onchange="updateField(' + idx + ',\'is_published\',this.value===\'true\')" style="font-size:12px;border:1px solid #e5e3e4;border-radius:4px;padding:2px 6px;">' +
+        '<option value="false"' + (!d.is_published ? ' selected' : '') + '>Draft</option>' +
+        '<option value="true"' + (d.is_published ? ' selected' : '') + '>Published</option>' +
+      '</select></td>';
+    tbody.appendChild(tr);
+  });
+
+  if (errors.length > 0) {
+    document.getElementById('errorList').style.display = 'block';
+    const ul = document.getElementById('errorItems');
+    ul.innerHTML = '';
+    errors.forEach(r => {
+      const li = document.createElement('li');
+      li.textContent = r.filename + ': ' + r.error;
+      ul.appendChild(li);
+    });
+  } else {
+    document.getElementById('errorList').style.display = 'none';
+  }
+}
+
+function editableCell(idx, field, value) {
+  return '<td contenteditable="true" style="padding:8px 10px;border-bottom:1px solid #f0eff0;min-width:60px;" ' +
+    'onblur="updateField(' + idx + ',\'' + field + '\',this.textContent.trim())">' +
+    (value !== null && value !== undefined ? value : '') + '</td>';
+}
+
+function updateField(idx, field, value) {
+  if (!_previewData[idx]) return;
+  const intFields = ['duration_sec','avg_pace_sec','avg_heart_rate','total_calories','active_calories','avg_cadence','steps'];
+  const floatFields = ['distance_meters','avg_speed_kph','avg_stride'];
+  if (field === 'is_published') {
+    _previewData[idx][field] = value === 'true' || value === true;
+  } else if (floatFields.includes(field)) {
+    _previewData[idx][field] = parseFloat(value) || null;
+  } else if (intFields.includes(field)) {
+    _previewData[idx][field] = parseInt(value) || null;
+  } else {
+    _previewData[idx][field] = value || null;
+  }
+}
+
+// ── Simpan semua ──
+async function saveAllActivities() {
+  if (!_previewData.length) return;
+  const btn = document.getElementById('btnSaveAll');
+  btn.textContent = 'Menyimpan...';
+  btn.disabled = true;
+
+  const payload = _previewData.map(d => {
+    const copy = { ...d };
+    delete copy._filename;
+    if (copy.date && copy.date.length === 10) {
+      copy.date = copy.date + 'T00:00:00+07:00';
+    }
+    return copy;
+  });
+
+  try {
+    const res = await fetch('/admin/running-activities/batch', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activities: payload })
+    });
+    const json = await res.json();
+    if (json.success) {
+      closeGeminiModal();
+      window.location.href = '/admin/running-activities?flash=created';
+    } else {
+      alert('Gagal menyimpan: ' + (json.message || 'Unknown error'));
+      btn.textContent = 'Simpan Semua →';
+      btn.disabled = false;
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+    btn.textContent = 'Simpan Semua →';
+    btn.disabled = false;
+  }
+}
+</script>
+`

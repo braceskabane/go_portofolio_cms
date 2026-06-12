@@ -33,6 +33,12 @@ func Connect(cfg *config.Config) *gorm.DB {
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(10)
 
+	// Auto-migrate models
+	if err := AutoMigrate(db); err != nil {
+		log.Fatalf("❌ AutoMigrate failed: %v", err)
+	}
+	log.Println("✅ Database migrated successfully")
+
 	DB = db
 	log.Println("✅ Database connected successfully")
 	return db

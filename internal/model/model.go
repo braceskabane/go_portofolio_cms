@@ -238,8 +238,8 @@ type RunningActivity struct {
 	DistanceMeters float64 `gorm:"default:0" json:"distance_meters"` // meter
 
 	// Calories
-	TotalCalories  int `gorm:"default:0" json:"total_calories"`
-	ActiveCalories int `gorm:"default:0" json:"active_calories"`
+	TotalCalories  float64 `gorm:"default:0" json:"total_calories"`
+	ActiveCalories float64 `gorm:"default:0" json:"active_calories"`
 
 	// Pace & speed
 	AvgPaceSec  int     `gorm:"default:0" json:"avg_pace_sec"`  // detik/km, tampilkan sebagai "5:30/km" di frontend

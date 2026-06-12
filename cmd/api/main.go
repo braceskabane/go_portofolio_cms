@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	_ "portfolio-cms/docs"
 
 	"portfolio-cms/internal/admin"
 	"portfolio-cms/internal/config"
@@ -58,6 +59,7 @@ func main() {
 	profileSvc             := service.NewProfileService(db)
 	contactSvc             := service.NewContactService(db)
 	runningActivitySvc     := service.NewRunningActivityService(db)
+	geminiSvc             := service.NewGeminiService(cfg.Gemini.APIKey, cfg.Gemini.Model)
 
 	// ── 7. Wire handlers ──────────────────────────────────────────────────────
 	authHandler                := handler.NewAuthHandler(authSvc)
@@ -72,7 +74,7 @@ func main() {
 	educationHandler           := handler.NewEducationHandler(educationSvc)
 	profileHandler             := handler.NewProfileHandler(profileSvc)
 	contactHandler             := handler.NewContactHandler(contactSvc)
-	runningActivityHandler     := handler.NewRunningActivityHandler(runningActivitySvc)
+	runningActivityHandler := handler.NewRunningActivityHandler(runningActivitySvc, geminiSvc) 
 
 	// ── 8. Register routes ────────────────────────────────────────────────────
 	router := NewRouter(
