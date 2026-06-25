@@ -43,6 +43,7 @@ func main() {
 	app.Use(middleware.CORS(cfg.CORS.AllowedOrigins))
 
 	// ── 5. Mount custom admin panel at /admin ────────────────────────────────
+	admin.Init(cfg.Google.ClientID)
 	admin.SetupAdmin(app, cfg, db)
 
 	// ── 6. Wire services ──────────────────────────────────────────────────────
@@ -60,6 +61,8 @@ func main() {
 	contactSvc             := service.NewContactService(db)
 	runningActivitySvc     := service.NewRunningActivityService(db)
 	geminiSvc             := service.NewGeminiService(cfg.Gemini.APIKey, cfg.Gemini.Model)
+	runningAnalysisSvc := service.NewRunningAnalysisService(db, cfg.Gemini.APIKey, cfg.Gemini.Model)
+	calendarSvc        := service.NewCalendarService()
 
 	// ── 7. Wire handlers ──────────────────────────────────────────────────────
 	authHandler                := handler.NewAuthHandler(authSvc)
@@ -75,6 +78,7 @@ func main() {
 	profileHandler             := handler.NewProfileHandler(profileSvc)
 	contactHandler             := handler.NewContactHandler(contactSvc)
 	runningActivityHandler := handler.NewRunningActivityHandler(runningActivitySvc, geminiSvc) 
+	runningAnalysisHandler := handler.NewRunningAnalysisHandler(runningAnalysisSvc, calendarSvc)
 
 	// ── 8. Register routes ────────────────────────────────────────────────────
 	router := NewRouter(
@@ -92,6 +96,7 @@ func main() {
 		profileHandler,
 		contactHandler,
 		runningActivityHandler,
+		runningAnalysisHandler,
 	)
 	router.Setup()
 

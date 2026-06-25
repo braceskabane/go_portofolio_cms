@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"portfolio-cms/internal/dto"
@@ -1249,4 +1250,382 @@ Petunjuk konversi:
 	}
 
 	return &result, nil
+}
+
+// ─── Running Analysis Service ─────────────────────────────────────────────────────
+type RunningAnalysisService interface {
+	GenerateAnalysis(req *dto.GenerateRunningAnalysisRequest) (*dto.RunningAnalysisResult, error)
+}
+
+type runningAnalysisService struct {
+	db       *gorm.DB
+	apiKey   string
+	model    string
+}
+
+func NewRunningAnalysisService(db *gorm.DB, apiKey, geminiModel string) RunningAnalysisService {
+	return &runningAnalysisService{
+		db:     db,
+		apiKey: apiKey,
+		model:  geminiModel,
+	}
+}
+
+func (s *runningAnalysisService) GenerateAnalysis(req *dto.GenerateRunningAnalysisRequest) (*dto.RunningAnalysisResult, error) {
+	// 1. Ambil semua data lari dari DB (endpoint yg sudah ada, langsung query)
+	var activities []model.RunningActivity
+	if err := s.db.Order("date desc").Find(&activities).Error; err != nil {
+		return nil, fmt.Errorf("fetch activities: %w", err)
+	}
+	if len(activities) < 3 {
+		return nil, errors.New("minimal 3 sesi lari diperlukan untuk analisis")
+	}
+
+	// 2. Build prompt
+	userPrompt := s.buildPrompt(activities, req)
+
+	// 3. Panggil Gemini (pola sama persis dengan ExtractRunningActivity)
+	reqBody := geminiRequest{
+		Contents: []geminiContent{
+			{
+				Parts: []geminiPart{
+					{Text: runningSystemPrompt},
+					{Text: userPrompt},
+					{Text: runningOutputSchema},
+				},
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf(
+		"https://generativelanguage.googleapis.com/v1/models/%s:generateContent?key=%s",
+		s.model, s.apiKey,
+	)
+
+	resp, err := http.Post(url, "application/json", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("call Gemini API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	var geminiResp geminiResponse
+	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	if geminiResp.Error != nil {
+		return nil, fmt.Errorf("Gemini API error: %s", geminiResp.Error.Message)
+	}
+	if len(geminiResp.Candidates) == 0 {
+		return nil, errors.New("no response from Gemini")
+	}
+
+	rawText := geminiResp.Candidates[0].Content.Parts[0].Text
+	rawText = strings.TrimSpace(rawText)
+	rawText = strings.TrimPrefix(rawText, "```json")
+	rawText = strings.TrimPrefix(rawText, "```")
+	rawText = strings.TrimSuffix(rawText, "```")
+	rawText = strings.TrimSpace(rawText)
+
+	log.Println("========== GEMINI RAW RESPONSE ==========")
+	log.Println(rawText)
+	log.Println("========== END GEMINI RESPONSE ==========")
+
+	var result dto.RunningAnalysisResult
+	if err := json.Unmarshal([]byte(rawText), &result); err != nil {
+		return nil, fmt.Errorf("parse analysis result: %w — raw: %.200s", err, rawText)
+	}
+
+	return &result, nil
+}
+
+func (s *runningAnalysisService) buildPrompt(
+	activities []model.RunningActivity,
+	req *dto.GenerateRunningAnalysisRequest,
+) string {
+	var sb strings.Builder
+	now := time.Now().In(time.FixedZone("WIB", 7*3600))
+
+	sb.WriteString(fmt.Sprintf("## CONTEXT\nToday: %s\nTimezone: Asia/Jakarta (WIB, UTC+7)\n\n",
+		now.Format("2006-01-02 (Monday)")))
+
+	// User preferences
+	if req != nil {
+		if req.GoalDescription != "" {
+			sb.WriteString(fmt.Sprintf("Runner's goal: %s\n", req.GoalDescription))
+		}
+		if len(req.AvailableDays) > 0 {
+			sb.WriteString(fmt.Sprintf("Available days (0=Sun,1=Mon,...,6=Sat): %v\n", req.AvailableDays))
+		}
+		if req.PreferredRunTime != "" {
+			sb.WriteString(fmt.Sprintf("Preferred run time: %s\n", req.PreferredRunTime))
+		}
+		if req.MaxWeeklyDistKm > 0 {
+			sb.WriteString(fmt.Sprintf("Max weekly distance: %.1f km\n", req.MaxWeeklyDistKm))
+		}
+	}
+
+	// Tabel data historis — format ringkas, semua sesi
+	sb.WriteString("\n## HISTORICAL RUNNING DATA\n")
+	sb.WriteString("Format: date | dist_km | duration | pace_min_per_km | avg_hr | cadence_spm | stride_m | calories | speed_kph\n\n")
+
+	for _, a := range activities {
+		distKm := a.DistanceMeters / 1000
+		durationStr := formatDurationSec(a.DurationSec)
+		paceStr := formatPaceSec(a.AvgPaceSec)
+
+		sb.WriteString(fmt.Sprintf("%s | %.2fkm | %s | %s/km | %dbpm | %dspm | %.2fm | %.0fkcal | %.1fkph\n",
+			a.Date.Format("2006-01-02"),
+			distKm,
+			durationStr,
+			paceStr,
+			a.AvgHeartRate,
+			a.AvgCadence,
+			a.AvgStride,
+			a.TotalCalories,
+			a.AvgSpeedKph,
+		))
+	}
+
+	// Summary stats untuk konteks cepat
+	sb.WriteString(s.buildSummaryStats(activities, now))
+
+	return sb.String()
+}
+
+func (s *runningAnalysisService) buildSummaryStats(activities []model.RunningActivity, now time.Time) string {
+	var sb strings.Builder
+	sb.WriteString("\n## COMPUTED SUMMARY\n")
+
+	total := len(activities)
+	var totalDistM, totalCalories float64
+	var totalPaceSec, totalHR, totalCadence int
+	validPace, validHR, validCadence := 0, 0, 0
+
+	// Last 7 days
+	var last7DistM float64
+	var last7Count int
+
+	// Last 42 days
+	var last42DistM float64
+	var last42Count int
+
+	cutoff7 := now.AddDate(0, 0, -7)
+	cutoff42 := now.AddDate(0, 0, -42)
+
+	for _, a := range activities {
+		totalDistM += a.DistanceMeters
+		totalCalories += a.TotalCalories
+		if a.AvgPaceSec > 0 {
+			totalPaceSec += a.AvgPaceSec
+			validPace++
+		}
+		if a.AvgHeartRate > 0 {
+			totalHR += a.AvgHeartRate
+			validHR++
+		}
+		if a.AvgCadence > 0 {
+			totalCadence += a.AvgCadence
+			validCadence++
+		}
+		if a.Date.After(cutoff7) {
+			last7DistM += a.DistanceMeters
+			last7Count++
+		}
+		if a.Date.After(cutoff42) {
+			last42DistM += a.DistanceMeters
+			last42Count++
+		}
+	}
+
+	avgDist := totalDistM / float64(total) / 1000
+	avgPace := 0
+	if validPace > 0 {
+		avgPace = totalPaceSec / validPace
+	}
+	avgHR := 0
+	if validHR > 0 {
+		avgHR = totalHR / validHR
+	}
+	avgCadence := 0
+	if validCadence > 0 {
+		avgCadence = totalCadence / validCadence
+	}
+
+	// Trend: bandingkan 5 sesi pertama vs 5 sesi terakhir
+	trendDesc := "insufficient data"
+	if total >= 10 {
+		var oldPace, newPace int
+		for i := 0; i < 5; i++ {
+			oldPace += activities[total-1-i].AvgPaceSec // sesi lama (index tinggi = lebih lama)
+			newPace += activities[i].AvgPaceSec         // sesi baru (index 0 = terbaru)
+		}
+		oldAvg := oldPace / 5
+		newAvg := newPace / 5
+		diff := oldAvg - newAvg // positif = pace membaik (lebih cepat)
+		if diff > 15 {
+			trendDesc = "improving (pace faster by ~" + formatPaceSec(diff) + "/km)"
+		} else if diff < -15 {
+			trendDesc = "declining (pace slower by ~" + formatPaceSec(-diff) + "/km)"
+		} else {
+			trendDesc = "plateau (pace stable)"
+		}
+	}
+
+	sb.WriteString(fmt.Sprintf("Total sessions: %d\n", total))
+	sb.WriteString(fmt.Sprintf("Total distance: %.1f km\n", totalDistM/1000))
+	sb.WriteString(fmt.Sprintf("Avg distance per session: %.2f km\n", avgDist))
+	sb.WriteString(fmt.Sprintf("Avg pace: %s /km\n", formatPaceSec(avgPace)))
+	sb.WriteString(fmt.Sprintf("Avg heart rate: %d bpm\n", avgHR))
+	sb.WriteString(fmt.Sprintf("Avg cadence: %d spm\n", avgCadence))
+	sb.WriteString(fmt.Sprintf("Total calories burned: %.0f kcal\n", totalCalories))
+	sb.WriteString(fmt.Sprintf("Last 7 days: %d sessions, %.1f km\n", last7Count, last7DistM/1000))
+	sb.WriteString(fmt.Sprintf("Last 42 days: %d sessions, %.1f km\n", last42Count, last42DistM/1000))
+	sb.WriteString(fmt.Sprintf("Performance trend: %s\n", trendDesc))
+
+	return sb.String()
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+func formatDurationSec(sec int) string {
+	h := sec / 3600
+	m := (sec % 3600) / 60
+	s := sec % 60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+func formatPaceSec(sec int) string {
+	if sec <= 0 {
+		return "0:00"
+	}
+	return fmt.Sprintf("%d:%02d", sec/60, sec%60)
+}
+
+// ─── Calendar Service ──────────────────────────────────────────────────────────────────
+type CalendarService interface {
+	SyncEvents(accessToken string, events []dto.CalendarEventDTO) (*dto.CalendarSyncResult, error)
+}
+
+type calendarService struct{}
+
+func NewCalendarService() CalendarService {
+	return &calendarService{}
+}
+
+// gcalEvent adalah struktur minimal untuk Google Calendar API v3
+type gcalEvent struct {
+	Summary     string        `json:"summary"`
+	Description string        `json:"description"`
+	ColorID     string        `json:"colorId,omitempty"`
+	Start       gcalDateTime  `json:"start"`
+	End         gcalDateTime  `json:"end"`
+	Reminders   gcalReminders `json:"reminders"`
+}
+
+type gcalDateTime struct {
+	DateTime string `json:"dateTime"`
+	TimeZone string `json:"timeZone"`
+}
+
+type gcalReminders struct {
+	UseDefault bool            `json:"useDefault"`
+	Overrides  []gcalReminder  `json:"overrides"`
+}
+
+type gcalReminder struct {
+	Method  string `json:"method"`
+	Minutes int    `json:"minutes"`
+}
+
+func (s *calendarService) SyncEvents(accessToken string, events []dto.CalendarEventDTO) (*dto.CalendarSyncResult, error) {
+	result := &dto.CalendarSyncResult{}
+	const tz = "Asia/Jakarta"
+
+	for _, e := range events {
+		// Parse tanggal dan waktu
+		startStr := fmt.Sprintf("%sT%s:00+07:00", e.Date, e.StartTime)
+		startTime, err := time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+		endTime := startTime.Add(time.Duration(e.DurationMin) * time.Minute)
+
+		event := gcalEvent{
+			Summary:     e.Title,
+			Description: e.Description,
+			ColorID:     e.ColorID,
+			Start:       gcalDateTime{DateTime: startTime.Format(time.RFC3339), TimeZone: tz},
+			End:         gcalDateTime{DateTime: endTime.Format(time.RFC3339), TimeZone: tz},
+			Reminders: gcalReminders{
+				UseDefault: false,
+				Overrides: []gcalReminder{
+					{Method: "popup", Minutes: 60},
+					{Method: "popup", Minutes: 15},
+				},
+			},
+		}
+
+		bodyBytes, err := json.Marshal(event)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+
+		req, err := http.NewRequest(
+			"POST",
+			"https://www.googleapis.com/calendar/v3/calendars/primary/events",
+			bytes.NewReader(bodyBytes),
+		)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+		respBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			result.Failed++
+			continue
+		}
+
+		// Ambil ID dan link event yang baru dibuat
+		var created struct {
+			ID      string `json:"id"`
+			HtmlLink string `json:"htmlLink"`
+			Summary  string `json:"summary"`
+		}
+		if err := json.Unmarshal(respBytes, &created); err == nil {
+			result.EventURLs = append(result.EventURLs, dto.CalendarEventCreated{
+				Title:    created.Summary,
+				Date:     e.Date,
+				EventID:  created.ID,
+				EventURL: created.HtmlLink,
+			})
+			result.Synced++
+		}
+	}
+
+	return result, nil
 }

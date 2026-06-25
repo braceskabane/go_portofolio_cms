@@ -8,6 +8,12 @@ import (
 	"gorm.io/gorm"
 )
 
+var googleClientID string
+
+func Init(clientID string) {
+	googleClientID = clientID
+}
+
 // SetupAdmin mounts the built-in admin panel at /admin
 func SetupAdmin(app *fiber.App, cfg *config.Config, db *gorm.DB) {
 	admin := app.Group("/admin")
@@ -111,4 +117,8 @@ func SetupAdmin(app *fiber.App, cfg *config.Config, db *gorm.DB) {
 	protected.Post("/running-activities", CreateRunningActivityHandler(db))
 	protected.Post("/running-activities/:id", UpdateRunningActivityHandler(db))
 	protected.Delete("/running-activities/:id", DeleteRunningActivityHandler(db))
+
+	// ----- Running Analysis -----
+	protected.Get("/running-analysis", RunningAnalysisPage(db, cfg))
+	protected.Post("/running-analysis/generate", GenerateAnalysisHandler(db, cfg))
 }

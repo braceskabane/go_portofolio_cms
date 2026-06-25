@@ -327,3 +327,92 @@ type UpdateRunningActivityRequest struct {
 	IsPublished    *bool    `json:"is_published"`
 	Date           *string  `json:"date"` // RFC3339
 }
+
+// ─── Running analysisis sugestion and schedule for google calendar ─────────────────────────────────────────────────────────
+
+// Request body untuk Gemini AI
+type GenerateRunningAnalysisRequest struct {
+	GoalDescription   string `json:"goal_description"`    // "Ingin bisa lari 10K dalam 2 bulan"
+	AvailableDays     []int  `json:"available_days"`      // [1,3,5,6] = Senin,Rabu,Jumat,Sabtu
+	PreferredRunTime  string `json:"preferred_run_time"`  // "06:00"
+	MaxWeeklyDistKm   float64 `json:"max_weekly_dist_km"` // batas volume (opsional)
+}
+
+type SyncCalendarRequest struct {
+	Events []CalendarEventDTO `json:"events"`
+}
+
+// Gemini Response Contract
+type RunningAnalysisResult struct {
+	CoachNarrative    string             `json:"coach_narrative"`
+	GeneratedAt       string             `json:"generated_at"`
+	FitnessAssessment FitnessAssessment  `json:"fitness_assessment"`
+	PaceZones         PaceZones          `json:"pace_zones"`
+	WeeklyPlan        []DayPlan          `json:"weekly_plan"`
+	CalendarEvents    []CalendarEventDTO `json:"calendar_events"`
+	Warnings          []RunningWarning   `json:"warnings"`
+}
+
+type FitnessAssessment struct {
+	Level        string  `json:"level"`         // "beginner" | "intermediate" | "advanced"
+	FatigueScore float64     `json:"fatigue_score"` // 0–100
+	AerobicBase  string  `json:"aerobic_base"`  // "weak" | "building" | "solid" | "strong"
+	Trend        string  `json:"trend"`         // "improving" | "plateau" | "declining"
+	CTL          float64 `json:"ctl"`           // chronic training load (42-day avg)
+	ATL          float64 `json:"atl"`           // acute training load (7-day avg)
+	TSB          float64 `json:"tsb"`           // training stress balance (CTL - ATL)
+}
+
+type PaceZones struct {
+	Easy      PaceRange `json:"easy"`
+	Aerobic   PaceRange `json:"aerobic"`
+	Tempo     PaceRange `json:"tempo"`
+	Threshold PaceRange `json:"threshold"`
+}
+
+type PaceRange struct {
+	MinPaceSec int    `json:"min_pace_sec"` // detik/km (konsisten dengan model)
+	MaxPaceSec int    `json:"max_pace_sec"`
+	Label      string `json:"label"` // "5:30–6:00/km"
+}
+
+type DayPlan struct {
+	DayOffset   int     `json:"day_offset"`       // 0=hari ini, 1=besok, dst
+	DayName     string  `json:"day_name"`         // "Senin"
+	SessionType string  `json:"session_type"`     // "easy"|"tempo"|"long"|"rest"|"strength"
+	TargetDistKm float64 `json:"target_dist_km"`
+	TargetPace  string  `json:"target_pace"`      // "5:45–6:00/km"
+	TargetHRZone string `json:"target_hr_zone"`  // "Zone 2 (75–80% HR)"
+	Focus       string  `json:"focus"`            // "Fokus cadence 175 spm"
+	Rationale   string  `json:"rationale"`        // alasan ilmiah singkat
+}
+
+type CalendarEventDTO struct {
+	Title       string `json:"title"`
+	Date        string `json:"date"`         // "2026-06-28"
+	StartTime   string `json:"start_time"`   // "06:00"
+	DurationMin int    `json:"duration_min"`
+	Description string `json:"description"`  // detail sesi untuk notif
+	ColorID     string `json:"color_id"`     // Google Calendar color: "2"=sage, "6"=tangerine, "9"=blueberry
+}
+
+type RunningWarning struct {
+	Type     string `json:"type"`     // "overtraining"|"injury_risk"|"recovery_needed"
+	Message  string `json:"message"`
+	Severity string `json:"severity"` // "info"|"warning"|"critical"
+}
+
+// ─── Calendar Sync Result ─────────────────────────────────────────────────────
+
+type CalendarSyncResult struct {
+	Synced    int                    `json:"synced"`
+	Failed    int                    `json:"failed"`
+	EventURLs []CalendarEventCreated `json:"event_urls"`
+}
+
+type CalendarEventCreated struct {
+	Title    string `json:"title"`
+	Date     string `json:"date"`
+	EventID  string `json:"event_id"`
+	EventURL string `json:"event_url"`
+}

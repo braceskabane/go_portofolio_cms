@@ -13,10 +13,15 @@ type GeminiConfig struct {
 	Model  string
 }
 
+type GoogleConfig struct {
+	ClientID string
+}
+
 type Config struct {
 	App      AppConfig
 	Database DatabaseConfig
 	JWT      JWTConfig
+	Google   GoogleConfig
 	Admin    AdminConfig
 	CORS     CORSConfig
 	Gemini   GeminiConfig
@@ -58,6 +63,12 @@ type CORSConfig struct {
 
 var Cfg *Config
 
+var googleClientID string
+
+func Init(clientID string) {
+	googleClientID = clientID
+}
+
 func Load() *Config {
 	// Load .env file (ignored in production / Railway env vars)
 	_ = godotenv.Load()
@@ -95,6 +106,9 @@ func Load() *Config {
 		Gemini: GeminiConfig{
 			APIKey: getEnv("GEMINI_API_KEY", ""),
 			Model:  getEnv("GEMINI_MODEL", "gemini-1.5-flash"),
+		},
+		Google: GoogleConfig{
+			ClientID: getEnv("GOOGLE_CLIENT_ID", ""),
 		},
 	}
 

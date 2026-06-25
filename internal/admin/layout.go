@@ -48,6 +48,7 @@ func buildNav(unreadContacts int) []navItem {
 		{"/admin/stack-categories", "🗂️", "Stack Cat.", "taxonomy", ""},
 		{"/admin/contacts", "✉️", "Contacts", "system", unread},
 		{"/admin/profile", "◷", "Profile", "system", ""},
+		{"/admin/running-analysis", "🧠", "Run Analysis", "content", ""},
 	}
 }
 
@@ -61,6 +62,7 @@ type layoutData struct {
 	Nav          []navItem
 	Content      template.HTML
 	TopActions   template.HTML
+	GoogleClientID string
 }
 
 type layoutCfg struct {
@@ -105,6 +107,7 @@ func layout(title, activeMenu, content string, opts ...layoutOpt) string {
 		Nav:          buildNav(cfg.unreadContacts),
 		Content:      template.HTML(content), // #nosec
 		TopActions:   template.HTML(cfg.topActions),
+		GoogleClientID: googleClientID,
 	}
 
 	var buf bytes.Buffer

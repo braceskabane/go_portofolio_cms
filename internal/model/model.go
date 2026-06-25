@@ -255,3 +255,4 @@ type RunningActivity struct {
 
 	IsPublished bool `gorm:"default:true" json:"is_published"`
 }
+

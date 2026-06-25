@@ -25,6 +25,7 @@ type Router struct {
 	profile              *handler.ProfileHandler
 	contact              *handler.ContactHandler
 	runningActivity      *handler.RunningActivityHandler
+	runningAnalysis      *handler.RunningAnalysisHandler
 }
 
 func NewRouter(
@@ -42,6 +43,7 @@ func NewRouter(
 	profile *handler.ProfileHandler,
 	contact *handler.ContactHandler,
 	runningActivity *handler.RunningActivityHandler,
+	runningAnalysis *handler.RunningAnalysisHandler,
 ) *Router {
 	return &Router{
 		app:                 app,
@@ -58,6 +60,7 @@ func NewRouter(
 		profile:             profile,
 		contact:             contact,
 		runningActivity:     runningActivity,
+		runningAnalysis:     runningAnalysis,
 	}
 }
 
@@ -174,4 +177,8 @@ func (r *Router) Setup() {
 	protected.Post("/running-activities", r.runningActivity.CreateActivity)
 	protected.Put("/running-activities/:id", r.runningActivity.UpdateActivity)
 	protected.Delete("/running-activities/:id", r.runningActivity.DeleteActivity)
+
+	// Running Analysis
+	protected.Post("/running-analysis/generate",        r.runningAnalysis.Generate)
+	protected.Post("/running-analysis/sync-calendar",   r.runningAnalysis.SyncCalendar)
 }
